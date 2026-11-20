@@ -6,17 +6,27 @@ import { connect } from "./pool.js";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// Определяем корень проекта:
-// - На локальной машине: проект лежит рядом с server/
-// - На Render: ROOT = parent of __dirname (server/src/db -> server -> root)
-const ROOT = resolve(__dirname, "../../..");
-const GOODS_JSON = join(ROOT, "db_goods.json");
-const CATEGORY_JSON = join(ROOT, "db_category.json");
+// Корень репозитория (локально) и корень серверной папки (на хостинге с Root Directory = server)
+const REPO_ROOT = resolve(__dirname, "../../..");
+const SERVER_ROOT = resolve(__dirname, "../..");
 
-// Изображения: сначала пробуем из server/image/, потом из src/image/
-const SERVER_IMAGE_DIR = resolve(__dirname, "../../image");
-const SRC_IMAGE_DIR = join(ROOT, "src", "image");
-const IMG_DIR = SERVER_IMAGE_DIR;
+/**
+ * Ищет файл в нескольких возможных местах и возвращает первый существующий.
+ */
+function findFile(name, dirs) {
+  for (const dir of dirs) {
+    const p = join(dir, name);
+    if (existsSync(p)) return p;
+  }
+  return join(dirs[0], name);
+}
+
+const GOODS_JSON = findFile("db_goods.json", [SERVER_ROOT, REPO_ROOT]);
+const CATEGORY_JSON = findFile("db_category.json", [SERVER_ROOT, REPO_ROOT]);
+
+// Изображения: рабочий каталог server/image и исходный src/image (если доступен)
+const IMG_DIR = resolve(__dirname, "../../image");
+const SRC_IMAGE_DIR = join(REPO_ROOT, "src", "image");
 
 // DDL-схемы
 const SCHEMA = `
@@ -43,12 +53,47 @@ CREATE INDEX IF NOT EXISTS idx_goods_discount ON goods(discount) WHERE discount 
 `;
 
 /**
+ * Синхронизирует изображения в рабочий каталог server/image.
+ * Вызывается при каждом старте, т.к. на хостингах (Render) файловая
+ * система контейнера эфемерна и очищается при перезапуске.
+ */
+function syncImages() {
+  if (!existsSync(IMG_DIR)) {
+    mkdirSync(IMG_DIR, { recursive: true });
+  }
+
+  // Исходные изображения могут лежать в server/image (закоммичены)
+  // и/или в src/image (локальная разработка)
+  const imageSources = [IMG_DIR, SRC_IMAGE_DIR].filter(
+    (p) => p && existsSync(p),
+  );
+
+  for (const src of imageSources) {
+    const files = readdirSync(src);
+    let copied = 0;
+    for (const file of files) {
+      const dest = join(IMG_DIR, file);
+      if (src !== IMG_DIR && !existsSync(dest)) {
+        copyFileSync(join(src, file), dest);
+        copied++;
+      }
+    }
+    if (copied > 0) {
+      console.log(`Скопировано ${copied} изображений из ${src} в ${IMG_DIR}`);
+    }
+  }
+}
+
+/**
  * Идемпотентная инициализация БД:
  * 1. Создаёт таблицы и индексы (если отсутствуют).
  * 2. Если таблица goods пуста — импортирует данные из JSON.
- * 3. Копирует изображения из src/image/ в server/image/.
+ * 3. Всегда синхронизирует изображения в server/image.
  */
 async function initDB() {
+  // Изображения нужны всегда, независимо от того, есть ли данные в БД
+  syncImages();
+
   const client = await connect();
   try {
     console.log("Инициализация схемы...");
@@ -106,33 +151,6 @@ async function initDB() {
     console.log("Импорт завершён.");
   } finally {
     client.release();
-  }
-
-  // Копируем изображения из src/image/ в server/image/ (если ещё не скопированы)
-  if (!existsSync(IMG_DIR)) {
-    mkdirSync(IMG_DIR, { recursive: true });
-  }
-
-  // Ищем изображения: сначала в src/image/, потом в server/image/ (на случай если уже есть)
-  const imageSources = [SRC_IMAGE_DIR, SERVER_IMAGE_DIR].filter(
-    (p) => p && existsSync(p),
-  );
-
-  for (const src of imageSources) {
-    if (existsSync(src)) {
-      const files = readdirSync(src);
-      let copied = 0;
-      for (const file of files) {
-        const dest = join(IMG_DIR, file);
-        if (!existsSync(dest)) {
-          copyFileSync(join(src, file), dest);
-          copied++;
-        }
-      }
-      if (copied > 0) {
-        console.log(`Скопировано ${copied} изображений из ${src} в ${IMG_DIR}`);
-      }
-    }
   }
 }
 

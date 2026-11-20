@@ -14,6 +14,8 @@ const __dirname = dirname(__filename);
 
 // Пути к статике
 const IMG_DIR = resolve(__dirname, "../image");
+// Резервный каталог с исходными изображениями (может отсутствовать на хостинге)
+const SRC_IMG_DIR = resolve(__dirname, "../../src/image");
 
 /**
  * CORS-обработчик. Вызывается до маршрутизации.
@@ -47,18 +49,37 @@ function serveImage(req, res, filename) {
     return;
   }
   _stat(filePath, (err, stat) => {
+    // Если файла нет в рабочем каталоге — пробуем исходный каталог
     if (err || !stat.isFile()) {
+      const fallbackPath = resolve(SRC_IMG_DIR, filename);
+      if (fallbackPath.startsWith(SRC_IMG_DIR)) {
+        _stat(fallbackPath, (err2, stat2) => {
+          if (err2 || !stat2.isFile()) {
+            sendError(res, 404, "Изображение не найдено");
+            return;
+          }
+          sendImageFile(res, fallbackPath);
+        });
+        return;
+      }
       sendError(res, 404, "Изображение не найдено");
       return;
     }
-    const ext = extname(filePath).slice(1).toLowerCase();
-    const mimeMap = { jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", gif: "image/gif", webp: "image/webp" };
-    res.writeHead(200, {
-      "Content-Type": mimeMap[ext] || "application/octet-stream",
-      "Cache-Control": "public, max-age=86400",
-    });
-    createReadStream(filePath).pipe(res);
+    sendImageFile(res, filePath);
   });
+}
+
+/**
+ * Отдаёт файл изображения с корректным Content-Type и кешированием.
+ */
+function sendImageFile(res, filePath) {
+  const ext = extname(filePath).slice(1).toLowerCase();
+  const mimeMap = { jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", gif: "image/gif", webp: "image/webp" };
+  res.writeHead(200, {
+    "Content-Type": mimeMap[ext] || "application/octet-stream",
+    "Cache-Control": "public, max-age=86400",
+  });
+  createReadStream(filePath).pipe(res);
 }
 
 /**
