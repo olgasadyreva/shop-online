@@ -1,0 +1,255 @@
+# ShopOnline — Серверная часть
+
+REST API для управления товарами и категориями онлайн-магазина.
+
+## Технологии
+
+- Node.js (встроенный модуль `http`)
+- PostgreSQL
+- pg (клиент для PostgreSQL)
+
+## Установка и запуск
+
+### 1. Требования
+
+- Node.js >= 18
+- PostgreSQL >= 12
+
+### 2. Настройка PostgreSQL
+
+Создайте базу данных и пользователя:
+
+```sql
+CREATE DATABASE shop_online;
+CREATE USER shop_user WITH PASSWORD 'shop_pass';
+GRANT ALL PRIVILEGES ON DATABASE shop_online TO shop_user;
+```
+
+### 3. Установка зависимостей
+
+```shell
+cd server
+npm install
+```
+
+### 4. Настройка переменных окружения
+
+Скопируйте `.env.example` в `.env` и укажите свои значения:
+
+```shell
+cp .env.example .env
+```
+
+Пример содержимого `.env`:
+
+```
+PORT=3000
+DATABASE_URL=postgres://shop_user:shop_pass@localhost:5432/shop_online
+LIMIT=10
+MAX_BODY_SIZE=2097152
+```
+
+### 5. Запуск сервера
+
+```shell
+npm start
+```
+
+Сервер доступен на `http://localhost:3000`.
+
+### Альтернатива: запуск из корня проекта
+
+```shell
+npm run server
+```
+
+## Структура проекта
+
+```
+server/
+├── src/
+│   ├── config.js         # Конфигурация (чтение .env)
+│   ├── router.js         # Мини-роутер
+│   ├── response.js       # JSON-ответы
+│   ├── body.js           # Парсер JSON-тела
+│   ├── index.js          # Точка входа
+│   └── db/
+│       ├── pool.js       # Пул pg-соединений
+│       └── init.js       # Инициализация схемы и импорт данных
+├── image/                # Изображения товаров
+├── .env                  # Переменные окружения (не в git)
+├── .env.example          # Шаблон переменных
+└── package.json
+```
+
+## Миграция данных
+
+При первом запуске сервер автоматически:
+1. Создаёт таблицы `categories` и `goods` (если отсутствуют).
+2. Импортирует данные из `db_category.json` и `db_goods.json` (если таблица `goods` пуста).
+3. Копирует изображения из `src/image/` в `server/image/`.
+
+## API
+
+Базовый префикс: `http://localhost:3000/api`
+
+### Категории
+
+#### `GET /api/categories`
+
+Получение списка категорий.
+
+**Ответ:** `200 OK`
+
+```json
+["Мобильный телефон", "Игрушки", "ТВ техника", ...]
+```
+
+---
+
+### Товары
+
+#### `GET /api/goods`
+
+Получение списка товаров с пагинацией и поиском.
+
+**Query-параметры:**
+
+| Параметр | Тип | Описание |
+|----------|-----|----------|
+| `search` | string | Поиск по названию/описанию |
+| `page` | number | Номер страницы (>= 1, по умолчанию 1) |
+
+**Ответ:** `200 OK`
+
+```json
+{
+  "goods": [...],
+  "page": 1,
+  "totalCount": 15,
+  "totalPage": 2
+}
+```
+
+**Пример:**
+```shell
+curl "http://localhost:3000/api/goods?page=2&search=Самсунг"
+```
+
+---
+
+#### `GET /api/goods/:id`
+
+Получение товара по ID.
+
+**Ответ:** `200 OK` или `404`
+
+---
+
+#### `POST /api/goods`
+
+Создание нового товара.
+
+**Тело запроса (JSON):**
+
+```json
+{
+  "title": "Название",
+  "price": 1000,
+  "description": "Описание",
+  "category": "Категория",
+  "discount": 10,
+  "count": 5,
+  "units": "шт",
+  "image": "data:image/jpeg;base64,..."
+}
+```
+
+**Ответ:** `201 Created` с созданным объектом.
+
+---
+
+#### `PATCH /api/goods/:id`
+
+Частичное обновление товара. Передаются только изменяемые поля.
+
+**Особенности:**
+- `discount: false` интерпретируется как `0`.
+- `image: null` или `image: false` — не менять изображение.
+
+**Ответ:** `200 OK` с обновлённым объектом.
+
+---
+
+#### `DELETE /api/goods/:id`
+
+Удаление товара.
+
+**Ответ:** `204 No Content`.
+
+---
+
+### Спецвыборки
+
+#### `GET /api/goods/discount`
+
+Список товаров со скидкой (discount > 0).
+
+**Ответ:** `200 OK`, массив товаров.
+
+---
+
+#### `GET /api/goods/category/:name`
+
+Товары по категории.
+
+**Ответ:** `200 OK`, массив товаров.
+
+---
+
+#### `GET /api/total`
+
+Общая стоимость всех товаров (с учётом скидки).
+
+**Ответ:** `200 OK`, число.
+
+---
+
+### Изображения
+
+#### `GET /image/<filename>`
+
+Раздача изображений из `server/image/`.
+
+Пример: `http://localhost:3000/image/2074454224.jpg`
+
+---
+
+## CORS
+
+Сервер поддерживает CORS:
+- `Access-Control-Allow-Origin: *`
+- `Access-Control-Allow-Methods: GET, POST, PATCH, DELETE, OPTIONS`
+- `OPTIONS` возвращает `204 No Content`
+
+---
+
+## Деплой
+
+1. Скопируйте папку `server/` на хостинг.
+2. Установите зависимости: `npm install --production`
+3. Настройте `.env` (порт, DATABASE_URL).
+4. Запустите: `npm start`
+
+Рекомендуется использовать `pm2` или `systemd` для постоянного запуска.
+
+---
+
+## Переменные окружения
+
+| Переменная | По умолчанию | Описание |
+|------------|-------------|----------|
+| `PORT` | `3000` | Порт HTTP-сервера |
+| `DATABASE_URL` | `postgres://postgres:postgres@localhost:5432/shop_online` | Строка подключения к PostgreSQL |
+| `LIMIT` | `10` | Товаров на одной странице |
+| `MAX_BODY_SIZE` | `2097152` | Максимальный размер тела запроса (2 МБ) |

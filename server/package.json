@@ -1,0 +1,26 @@
+{
+  "name": "shop-online-server",
+  "version": "1.0.0",
+  "description": "REST API серверной части онлайн-магазина ShopOnline",
+  "main": "src/index.js",
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "db:init": "node src/db/init.js"
+  },
+  "keywords": [
+    "nodejs",
+    "rest-api",
+    "postgresql",
+    "shop"
+  ],
+  "author": "Olga Sadyreva <olga.sadyreva@mail.ru>",
+  "license": "ISC",
+  "dependencies": {
+    "pg": "^8.13.1"
+  }
+}

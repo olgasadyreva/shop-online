@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.vscode/
+package-lock.json
+
+# Серверная часть
+server/node_modules/
+server/.env
+server/image/
+.env
+*.log
+.DS_Store
