@@ -1,8 +1,8 @@
 export const API_URL =
   typeof API_URL_GLOBAL !== "undefined" ? API_URL_GLOBAL : "http://localhost:3000";
-export const GOODS_URL = `${API_URL}/api/goods/`;
-export const CATEGORY_URL = `${API_URL}/api/categories/`;
-export const TOTAL_PRICE_URL = `${API_URL}/api/total/`;
+export const GOODS_URL = `${API_URL}/api/goods`;
+export const CATEGORY_URL = `${API_URL}/api/categories`;
+export const TOTAL_PRICE_URL = `${API_URL}/api/total`;
 export const appData = {
   lastUrl: GOODS_URL,
 };
