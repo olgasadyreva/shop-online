@@ -1,12 +1,5 @@
-// URL бэкенда: сначала пытаемся взять из переменной окружения, иначе localhost
-const API_HOST =
-  typeof process !== "undefined" && process.env?.API_URL
-    ? process.env.API_URL
-    : (typeof window !== "undefined" && window.env?.API_URL)
-        ? window.env.API_URL
-        : "http://localhost:3000";
-
-export const API_URL = API_HOST.endsWith("/") ? API_HOST.slice(0, -1) : API_HOST;
+export const API_URL =
+  typeof API_URL_GLOBAL !== "undefined" ? API_URL_GLOBAL : "http://localhost:3000";
 export const GOODS_URL = `${API_URL}/api/goods/`;
 export const CATEGORY_URL = `${API_URL}/api/categories/`;
 export const TOTAL_PRICE_URL = `${API_URL}/api/total/`;

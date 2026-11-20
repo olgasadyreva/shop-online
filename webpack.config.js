@@ -1,6 +1,7 @@
 const path = require("path");
 const HtmlWebpackPlugin = require("html-webpack-plugin");
 const MiniCssExtractPlugin = require("mini-css-extract-plugin");
+const webpack = require("webpack");
 
 const mode = process.env.NODE_ENV || "development";
 const devMode = mode === "development";
@@ -24,6 +25,11 @@ module.exports = {
     assetModuleFilename: "assets/[name][ext]",
   },
   plugins: [
+    new webpack.DefinePlugin({
+      API_URL_GLOBAL: JSON.stringify(
+        process.env.API_URL || "http://localhost:3000"
+      ),
+    }),
     new HtmlWebpackPlugin({
       template: path.resolve(__dirname, "src", "index.html"),
     }),
