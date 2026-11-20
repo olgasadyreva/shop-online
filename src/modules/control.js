@@ -1,4 +1,4 @@
-import create, { API_URL, GOODS_URL, appData } from "./const.js";
+import create, { API_URL, GOODS_URL, imageUrl, appData } from "./const.js";
 const { btn, table, modal, form, price, count, discont, formelems, checkbox } =
   create;
 import { closeModal, openModal } from "./modal.js";
@@ -132,7 +132,7 @@ export const openWindow = () => {
         }
 
         const data = await response.json();
-        const pictureUrl = `${API_URL}${data.image}`;
+        const pictureUrl = imageUrl(data.image);
 
         const w = screen.width / 2 - 400;
         const h = screen.height / 2 - 300;

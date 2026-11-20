@@ -3,6 +3,17 @@ export const API_URL =
 export const GOODS_URL = `${API_URL}/api/goods`;
 export const CATEGORY_URL = `${API_URL}/api/categories`;
 export const TOTAL_PRICE_URL = `${API_URL}/api/total`;
+
+/**
+ * Собирает абсолютный URL изображения.
+ * В БД хранится относительный путь вида "image/123.jpg",
+ * поэтому его нужно дополнить адресом бэкенда.
+ */
+export const imageUrl = (path) => {
+  if (!path) return "";
+  if (/^(https?:)?\/\//i.test(path) || path.startsWith("data:")) return path;
+  return `${API_URL}/${String(path).replace(/^\/+/, "")}`;
+};
 export const appData = {
   lastUrl: GOODS_URL,
 };

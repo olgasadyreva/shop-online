@@ -1,7 +1,7 @@
 import { fetchCategories } from "./category.js";
 import { getTotal } from "./summs.js";
 import { toBase } from "./picture.js";
-import { API_URL, GOODS_URL, appData } from "./const.js";
+import { API_URL, GOODS_URL, imageUrl, appData } from "./const.js";
 import { renderGoods } from "./render.js";
 
 export const openEditModal = async ({
@@ -252,7 +252,7 @@ export const openEditModal = async ({
         return;
       }
 
-      modalImage.src = `${API_URL}${data.image}`;
+      modalImage.src = imageUrl(data.image);
       modalImage.alt = "Product Image";
     } catch (error) {
       console.error("Error retrieving image:", error);
