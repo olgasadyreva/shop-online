@@ -8,6 +8,17 @@ const devMode = mode === "development";
 const target = devMode ? "web" : "browserslist";
 const devtool = devMode ? "source-map" : undefined;
 
+// Нормализуем адрес бэкенда: убираем слэш в конце и любой хвост вида /api/...
+function normalizeApiUrl(raw) {
+  if (!raw) return "http://localhost:3000";
+  return raw
+    .trim()
+    .replace(/\/+$/, "")
+    .replace(/\/api(\/.*)?$/i, "");
+}
+
+const apiUrl = normalizeApiUrl(process.env.API_URL);
+
 module.exports = {
   mode,
   target,
@@ -26,9 +37,7 @@ module.exports = {
   },
   plugins: [
     new webpack.DefinePlugin({
-      API_URL_GLOBAL: JSON.stringify(
-        process.env.API_URL || "http://localhost:3000"
-      ),
+      API_URL_GLOBAL: JSON.stringify(apiUrl),
     }),
     new HtmlWebpackPlugin({
       template: path.resolve(__dirname, "src", "index.html"),
