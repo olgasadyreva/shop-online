@@ -321,6 +321,28 @@
 }
 
 
+/* Превью изображения товара в модальных окнах */
+.spacer-container,
+.spacer-container-modal {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: center;
+  width: 100%;
+}
+
+.modal__image,
+.modal__spacer {
+  display: block;
+  max-width: 100%;
+  max-height: 220px;
+  width: auto;
+  height: auto;
+  margin: 16px auto 0;
+  border-radius: 8px;
+  object-fit: contain;
+}
+
+
 /* Модальное окно подтверждения удаления */
 .confirm-modal {
   max-width: 480px;

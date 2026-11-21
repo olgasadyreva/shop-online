@@ -11,7 +11,24 @@ let lastRequestId = 0;
 export const renderGoods = async (url) => {
   const dataUrl = new URL(url);
   const requestId = ++lastRequestId;
-  const data = await loadGoods({ url: dataUrl });
+
+  let data;
+  try {
+    data = await loadGoods({ url: dataUrl });
+  } catch (error) {
+    console.error("Не удалось загрузить товары:", error);
+    if (requestId === lastRequestId) {
+      table.textContent = "";
+      const row = document.createElement("tr");
+      const cell = document.createElement("td");
+      cell.classList.add("table__cell");
+      cell.colSpan = 8;
+      cell.textContent = error.message;
+      row.append(cell);
+      table.append(row);
+    }
+    return;
+  }
 
   // Пока шёл запрос, мог быть запущен более новый — его результат важнее.
   if (requestId !== lastRequestId) return;

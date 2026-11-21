@@ -7,7 +7,7 @@ export const pic = () => {
   const previewContainer = document.querySelector(".spacer-container");
 
   const imagePreview = document.createElement("img");
-  imagePreview.classList.add("modal_spacer");
+  imagePreview.classList.add("modal__spacer");
 
   const mesContainer = document.createElement("div");
   mesContainer.classList.add("mes-container");

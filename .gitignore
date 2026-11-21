@@ -9,3 +9,9 @@ server/.env
 .env
 *.log
 .DS_Store
+
+# Временные каталоги тестов и инструментов
+.e2e/
+.npm-cache/
+.tmp-images/
+.chrome-test/

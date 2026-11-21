@@ -1,9 +1,9 @@
 import { createServer } from "node:http";
-import { stat as _stat, createReadStream, mkdirSync, writeFileSync } from "node:fs";
+import { createReadStream, existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
 import { resolve, extname, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { query } from "./db/pool.js";
-import { limit as _limit, port } from "./config.js";
+import { imageDir, limit as _limit, port } from "./config.js";
 import Router from "./router.js";
 import parseBody from "./body.js";
 import { sendJSON, sendError } from "./response.js";
@@ -13,7 +13,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 // Пути к статике
-const IMG_DIR = resolve(__dirname, "../image");
+const IMG_DIR = imageDir;
 // Резервный каталог с исходными изображениями (может отсутствовать на хостинге)
 const SRC_IMG_DIR = resolve(__dirname, "../../src/image");
 
@@ -34,12 +34,94 @@ function applyCORS(req, res) {
   return false;
 }
 
+// Допустимые типы изображений и соответствующие расширения файлов
+const MIME_TO_EXT = {
+  "image/jpeg": "jpg",
+  "image/jpg": "jpg",
+  "image/png": "png",
+  "image/gif": "gif",
+  "image/webp": "webp",
+};
+const MAX_IMAGE_BYTES = 1048576;
+const IMAGE_NAME_RE = /^[a-zA-Z0-9_.-]+\.(jpg|jpeg|png|gif|webp)$/i;
+
 /**
- * Раздача изображений из директории server/image.
+ * Проверяет и декодирует data URI изображения.
+ * Бросает Error с понятным сообщением при любой проблеме.
+ * @param {string} imageBase64 — строка вида data:image/jpeg;base64,....
+ * @returns {{mime: string, ext: string, base64: string, buffer: Buffer}}
+ */
+function decodeImageData(imageBase64) {
+  if (typeof imageBase64 !== "string") {
+    throw new Error("ожидается строка в формате data URI (base64)");
+  }
+  const match = imageBase64.match(/^data:([^;]+);base64,([A-Za-z0-9+/=\s]+)$/);
+  if (!match) {
+    throw new Error("некорректный формат base64 (data URI)");
+  }
+  const mime = match[1].toLowerCase();
+  const ext = MIME_TO_EXT[mime];
+  if (!ext) {
+    throw new Error(`неподдерживаемый тип изображения: ${mime}`);
+  }
+  const base64 = match[2].replace(/\s+/g, "");
+  const buffer = Buffer.from(base64, "base64");
+  if (buffer.length === 0) {
+    throw new Error("пустое изображение");
+  }
+  if (buffer.length > MAX_IMAGE_BYTES) {
+    throw new Error("размер файла превышает 1 МБ");
+  }
+  return { mime, ext, base64, buffer };
+}
+
+/**
+ * Проверяет, что по пути лежит обычный файл.
+ */
+function isFile(filePath) {
+  try {
+    return existsSync(filePath) && statSync(filePath).isFile();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Достаёт изображение из БД, если файла нет на диске
+ * (на Render диск контейнера эфемерный и очищается при перезапуске).
+ * @param {string} filename — имя вида <id>.<ext>
+ * @returns {Promise<{buffer: Buffer, mime: string} | null>}
+ */
+async function loadImageFromDB(filename) {
+  const match = filename.match(/^(\d+)\.(jpg|jpeg|png|gif|webp)$/i);
+  if (!match) return null;
+
+  const { rows } = await query(
+    "SELECT mime, data FROM goods_images WHERE goods_id = $1",
+    [match[1]],
+  );
+  if (rows.length === 0) return null;
+
+  const buffer = Buffer.from(rows[0].data, "base64");
+  if (buffer.length === 0) return null;
+
+  // Заодно восстанавливаем файл на диске, чтобы не ходить в БД каждый раз.
+  try {
+    mkdirSync(IMG_DIR, { recursive: true });
+    writeFileSync(resolve(IMG_DIR, filename), buffer);
+  } catch (err) {
+    console.error(`Не удалось закешировать изображение ${filename}:`, err.message);
+  }
+
+  return { buffer, mime: rows[0].mime };
+}
+
+/**
+ * Раздача изображений: сначала рабочий каталог, затем БД, затем src/image.
  * Защищает от path traversal.
  */
-function serveImage(req, res, filename) {
-  if (!/^[a-zA-Z0-9_.-]+\.(jpg|jpeg|png|gif|webp)$/i.test(filename)) {
+async function serveImage(res, filename) {
+  if (!IMAGE_NAME_RE.test(filename)) {
     sendError(res, 400, "Недопустимое имя файла");
     return;
   }
@@ -48,25 +130,24 @@ function serveImage(req, res, filename) {
     sendError(res, 403, "Доступ запрещён");
     return;
   }
-  _stat(filePath, (err, stat) => {
-    // Если файла нет в рабочем каталоге — пробуем исходный каталог
-    if (err || !stat.isFile()) {
-      const fallbackPath = resolve(SRC_IMG_DIR, filename);
-      if (fallbackPath.startsWith(SRC_IMG_DIR)) {
-        _stat(fallbackPath, (err2, stat2) => {
-          if (err2 || !stat2.isFile()) {
-            sendError(res, 404, "Изображение не найдено");
-            return;
-          }
-          sendImageFile(res, fallbackPath);
-        });
-        return;
-      }
-      sendError(res, 404, "Изображение не найдено");
-      return;
-    }
+  if (isFile(filePath)) {
     sendImageFile(res, filePath);
-  });
+    return;
+  }
+
+  const fromDb = await loadImageFromDB(filename);
+  if (fromDb) {
+    sendImageBuffer(res, fromDb.buffer, fromDb.mime);
+    return;
+  }
+
+  const fallbackPath = resolve(SRC_IMG_DIR, filename);
+  if (fallbackPath.startsWith(SRC_IMG_DIR) && isFile(fallbackPath)) {
+    sendImageFile(res, fallbackPath);
+    return;
+  }
+
+  sendError(res, 404, "Изображение не найдено");
 }
 
 /**
@@ -77,42 +158,67 @@ function sendImageFile(res, filePath) {
   const mimeMap = { jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", gif: "image/gif", webp: "image/webp" };
   res.writeHead(200, {
     "Content-Type": mimeMap[ext] || "application/octet-stream",
+    "Content-Length": statSync(filePath).size,
     "Cache-Control": "public, max-age=86400",
   });
   createReadStream(filePath).pipe(res);
 }
 
 /**
- * Сохранение изображения: декодирует base64 (data URI), записывает в ./image/<id>.<ext>.
- * Возвращает относительный путь image/<id>.<ext>.
- * @param {number|string|null} id — идентификатор товара (null для новых, вставится после INSERT)
- * @param {string} imageBase64
+ * Отдаёт изображение из памяти (когда файла на диске нет).
+ */
+function sendImageBuffer(res, buffer, mime) {
+  res.writeHead(200, {
+    "Content-Type": mime,
+    "Content-Length": buffer.length,
+    "Cache-Control": "public, max-age=86400",
+  });
+  res.end(buffer);
+}
+
+/**
+ * Сохранение изображения в ./image/<id>.<ext> и в БД (goods_images).
+ * Копия в БД нужна, чтобы картинка пережила перезапуск контейнера на Render.
+ * @param {number|string} id — идентификатор товара
+ * @param {{buffer: Buffer, base64: string, mime: string, ext: string}} decoded
  * @returns {Promise<string>} относительный путь к файлу
  */
-async function saveImage(id, imageBase64) {
-  if (!imageBase64 || typeof imageBase64 !== "string") return null;
-  const match = imageBase64.match(/^data:([^;]+);base64,(.+)$/);
-  if (!match) throw new Error("Некорректный формат изображения (ожидается data URI)");
-
-  const mimeType = match[1];
-  const base64Data = match[2];
-  const binary = Buffer.from(base64Data, "base64");
-
-  const mimeToExt = {
-    "image/jpeg": "jpg",
-    "image/jpg": "jpg",
-    "image/png": "png",
-    "image/gif": "gif",
-    "image/webp": "webp",
-  };
-  const ext = mimeToExt[mimeType];
-  if (!ext) throw new Error("Неподдерживаемый тип изображения: " + mimeType);
-
-  const filename = `${id}.${ext}`;
+async function saveImage(id, decoded) {
+  const filename = `${id}.${decoded.ext}`;
   const filePath = resolve(IMG_DIR, filename);
-  mkdirSync(IMG_DIR, { recursive: true });
-  writeFileSync(filePath, binary);
+
+  try {
+    mkdirSync(IMG_DIR, { recursive: true });
+    writeFileSync(filePath, decoded.buffer);
+  } catch (err) {
+    // Файловая система может быть только для чтения — тогда работает
+    // раздача из БД, поэтому не считаем это фатальной ошибкой.
+    console.error(`Не удалось записать изображение на диск (${filePath}):`, err.message);
+  }
+
+  await query(
+    `INSERT INTO goods_images (goods_id, mime, data) VALUES ($1, $2, $3)
+     ON CONFLICT (goods_id) DO UPDATE SET mime = EXCLUDED.mime, data = EXCLUDED.data`,
+    [id, decoded.mime, decoded.base64],
+  );
+
   return `image/${filename}`;
+}
+
+/**
+ * Идентификатор товара для SQL: только положительное число в пределах BIGINT.
+ * @returns {string|null}
+ */
+const BIGINT_MAX = 9223372036854775807n;
+function parseId(raw) {
+  if (typeof raw !== "string" || !/^\d+$/.test(raw)) return null;
+  try {
+    const value = BigInt(raw);
+    if (value <= 0n || value > BIGINT_MAX) return null;
+  } catch {
+    return null;
+  }
+  return raw;
 }
 
 /**
@@ -175,24 +281,12 @@ function validateGoodsBody(body, isPatch) {
   }
 
   if (body.image !== undefined && body.image !== null && body.image !== false && body.image !== "false") {
-    if (typeof body.image === "string") {
-      if (body.image.startsWith("data:")) {
-        try {
-          const m = body.image.match(/^data:([^;]+);base64,(.+)$/);
-          if (!m) {
-            errors.push("image: некорректный формат base64 (data URI)");
-          } else {
-            const binary = Buffer.from(m[2], "base64");
-            if (binary.length > 1048576) {
-              errors.push("image: размер файла превышает 1 МБ");
-            }
-          }
-        } catch {
-          errors.push("image: некорректный формат base64");
-        }
-      } else {
-        errors.push("image: строка должна быть в формате data URI (base64)");
-      }
+    // Проверяем формат, тип и размер ДО записи в БД, иначе при ошибке
+    // остаётся товар без изображения.
+    try {
+      decodeImageData(body.image);
+    } catch (err) {
+      errors.push("image: " + err.message);
     }
   }
 
@@ -229,7 +323,9 @@ async function start() {
     try {
       const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
       const search = url.searchParams.get("search") || "";
-      const page = Math.max(1, parseInt(url.searchParams.get("page") || "1", 10));
+      // Некорректный page (не число) не должен превращаться в NaN и ронять запрос.
+      const parsedPage = parseInt(url.searchParams.get("page") || "1", 10);
+      const page = Number.isFinite(parsedPage) && parsedPage >= 1 ? parsedPage : 1;
       const limit = _limit;
       const offset = (page - 1) * limit;
 
@@ -300,11 +396,21 @@ async function start() {
 
       // Сохраняем изображение после получения id
       if (body.image && typeof body.image === "string" && body.image.startsWith("data:")) {
+        let decoded;
         try {
-          const image = await saveImage(item.id, body.image);
+          decoded = decodeImageData(body.image);
+        } catch (e) {
+          await query("DELETE FROM goods WHERE id = $1", [item.id]).catch(() => {});
+          sendError(res, 400, "Ошибка сохранения изображения: " + e.message);
+          return;
+        }
+        try {
+          const image = await saveImage(item.id, decoded);
           await query("UPDATE goods SET image = $1 WHERE id = $2", [image, item.id]);
           item.image = image;
         } catch (e) {
+          // Не оставляем товар-сироту без картинки.
+          await query("DELETE FROM goods WHERE id = $1", [item.id]).catch(() => {});
           sendError(res, 400, "Ошибка сохранения изображения: " + e.message);
           return;
         }
@@ -355,7 +461,12 @@ async function start() {
   // ---- Товар: GET /api/goods/:id ----
   router.add("GET", "/api/goods/:id", async (req, res, params) => {
     try {
-      const { rows } = await query("SELECT * FROM goods WHERE id = $1", [params.id]);
+      const id = parseId(params.id);
+      if (!id) {
+        sendError(res, 404, "Товар не найден");
+        return;
+      }
+      const { rows } = await query("SELECT * FROM goods WHERE id = $1", [id]);
       if (rows.length === 0) {
         sendError(res, 404, "Товар не найден");
         return;
@@ -370,6 +481,12 @@ async function start() {
   // ---- Товар: PATCH /api/goods/:id ----
   router.add("PATCH", "/api/goods/:id", async (req, res, params) => {
     try {
+      const id = parseId(params.id);
+      if (!id) {
+        sendError(res, 404, "Товар не найден");
+        return;
+      }
+
       const body = await parseBody(req);
       const errors = validateGoodsBody(body, true);
       if (errors.length > 0) {
@@ -377,7 +494,7 @@ async function start() {
         return;
       }
 
-      const { rows: existing } = await query("SELECT * FROM goods WHERE id = $1", [params.id]);
+      const { rows: existing } = await query("SELECT * FROM goods WHERE id = $1", [id]);
       if (existing.length === 0) {
         sendError(res, 404, "Товар не найден");
         return;
@@ -408,7 +525,8 @@ async function start() {
       if (body.image !== undefined && body.image !== null && body.image !== false && body.image !== "false") {
         if (typeof body.image === "string" && body.image.startsWith("data:")) {
           try {
-            const newImage = await saveImage(item.id, body.image);
+            const decoded = decodeImageData(body.image);
+            const newImage = await saveImage(item.id, decoded);
             updates.push(`image = $${idx++}`);
             values.push(newImage);
           } catch (e) {
@@ -447,7 +565,12 @@ async function start() {
   // ---- Товар: DELETE /api/goods/:id ----
   router.add("DELETE", "/api/goods/:id", async (req, res, params) => {
     try {
-      const { rows } = await query("DELETE FROM goods WHERE id = $1 RETURNING *", [params.id]);
+      const id = parseId(params.id);
+      if (!id) {
+        sendError(res, 404, "Товар не найден");
+        return;
+      }
+      const { rows } = await query("DELETE FROM goods WHERE id = $1 RETURNING *", [id]);
       if (rows.length === 0) {
         sendError(res, 404, "Товар не найден");
         return;
@@ -482,7 +605,7 @@ async function start() {
       const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
       if (req.method === "GET" && url.pathname.startsWith("/image/")) {
         const filename = url.pathname.slice("/image/".length);
-        serveImage(req, res, filename);
+        await serveImage(res, filename);
         return;
       }
 

@@ -37,11 +37,16 @@ file.addEventListener("change", () => {
     const selectedFile = file.files[0];
     const fileSizeInMb = selectedFile.size / (1024 * 1024);
     if (fileSizeInMb > 1) {
-      spacerCon.append(messageContainer);
+      // Контейнер мог быть скрыт после закрытия модального окна.
+      spacerCon.style.display = "block";
+      spacer.style.display = "none";
+      messageContainer.style.display = "block";
       messageContainer.append(message);
+      spacerCon.append(messageContainer);
     } else {
       const src = URL.createObjectURL(selectedFile);
 
+      spacerCon.style.display = "block";
       spacer.style.display = "block";
       spacer.src = src;
       spacerCon.append(spacer);

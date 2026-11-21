@@ -1,7 +1,7 @@
 import { fetchCategories } from "./category.js";
 import { getTotal } from "./summs.js";
 import { toBase } from "./picture.js";
-import { API_URL, GOODS_URL, imageUrl, appData } from "./const.js";
+import { goodsItemUrl, imageUrl, appData } from "./const.js";
 import { renderGoods } from "./render.js";
 
 export const openEditModal = async ({
@@ -59,7 +59,7 @@ export const openEditModal = async ({
 
   const nameLabel = document.createElement("label");
   nameLabel.classList.add("modal__label", "modal__label_name");
-  nameLabel.htmlFor = "name";
+  nameLabel.htmlFor = "edit-name";
 
   const nameText = document.createElement("span");
   nameText.classList.add("modal__text");
@@ -69,14 +69,14 @@ export const openEditModal = async ({
   nameInput.classList.add("modal__input");
   nameInput.type = "text";
   nameInput.name = "title";
-  nameInput.id = "name";
+  nameInput.id = "edit-name";
   nameInput.value = title;
 
   nameLabel.append(nameText, nameInput);
 
   const categoryLabel = document.createElement("label");
   categoryLabel.classList.add("modal__label", "modal__label_category");
-  categoryLabel.htmlFor = "category";
+  categoryLabel.htmlFor = "categoryId";
 
   const categoryText = document.createElement("span");
   categoryText.classList.add("modal__text");
@@ -94,7 +94,7 @@ export const openEditModal = async ({
 
   const descriptionLabel = document.createElement("label");
   descriptionLabel.classList.add("modal__label", "modal__label_description");
-  descriptionLabel.htmlFor = "description";
+  descriptionLabel.htmlFor = "edit-description";
   const descriptionText = document.createElement("span");
   descriptionText.classList.add("modal__text");
   descriptionText.textContent = "Описание";
@@ -102,14 +102,14 @@ export const openEditModal = async ({
   const descriptionTextarea = document.createElement("textarea");
   descriptionTextarea.classList.add("modal__input", "modal__input_textarea");
   descriptionTextarea.name = "description";
-  descriptionTextarea.id = "description";
+  descriptionTextarea.id = "edit-description";
   descriptionTextarea.value = description;
 
   descriptionLabel.append(descriptionText, descriptionTextarea);
 
   const unitsLabel = document.createElement("label");
   unitsLabel.classList.add("modal__label", "modal__label_units");
-  unitsLabel.htmlFor = "units";
+  unitsLabel.htmlFor = "edit-units";
   const unitsText = document.createElement("span");
   unitsText.classList.add("modal__text");
   unitsText.textContent = "Единицы измерения";
@@ -117,7 +117,7 @@ export const openEditModal = async ({
   unitsInput.classList.add("modal__input");
   unitsInput.type = "text";
   unitsInput.name = "units";
-  unitsInput.id = "units";
+  unitsInput.id = "edit-units";
   unitsInput.value = units;
 
   unitsLabel.append(unitsText, unitsInput);
@@ -126,18 +126,21 @@ export const openEditModal = async ({
   discountLabel.classList.add("modal__label", "modal__label_discount_two");
   const discountText = document.createElement("label");
   discountText.classList.add("modal__text");
-  discountText.htmlFor = "discount";
+  discountText.htmlFor = "edit-discount";
   discountText.textContent = "Дисконт";
 
   const checkboxWrapper = document.createElement("div");
   checkboxWrapper.classList.add("modal__checkbox-wrapper");
 
+  // Чекбокс отражает реальное состояние товара: скидка 0 — снят.
+  const hasDiscount = Number(discount) > 0;
+
   const discountCheckbox = document.createElement("input");
   discountCheckbox.classList.add("modal__checkbox");
   discountCheckbox.type = "checkbox";
   discountCheckbox.name = "discount";
-  discountCheckbox.id = "discount";
-  discountCheckbox.checked = true;
+  discountCheckbox.id = "edit-discount";
+  discountCheckbox.checked = hasDiscount;
   discountCheckbox.addEventListener("change", () => {
     discountInput.disabled = !discountCheckbox.checked;
     if (!discountCheckbox.checked) {
@@ -149,15 +152,16 @@ export const openEditModal = async ({
   discountInput.classList.add("modal__input", "modal__input_discount");
   discountInput.type = "number";
   discountInput.name = "discount_count";
-  discountInput.value =
-    discount !== undefined && discount !== null ? String(discount) : "";
+  discountInput.id = "edit-discount-count";
+  discountInput.value = hasDiscount ? String(discount) : "";
+  discountInput.disabled = !hasDiscount;
 
   checkboxWrapper.append(discountCheckbox, discountInput);
   discountLabel.append(discountText, checkboxWrapper);
 
   const countLabel = document.createElement("label");
   countLabel.classList.add("modal__label", "modal__label_count");
-  countLabel.htmlFor = "count";
+  countLabel.htmlFor = "edit-count";
   const countText = document.createElement("span");
   countText.classList.add("modal__text");
   countText.textContent = "Количество";
@@ -165,14 +169,14 @@ export const openEditModal = async ({
   countInput.classList.add("modal__input");
   countInput.type = "number";
   countInput.name = "count";
-  countInput.id = "count";
+  countInput.id = "edit-count";
   countInput.value = count;
 
   countLabel.append(countText, countInput);
 
   const priceLabel = document.createElement("label");
   priceLabel.classList.add("modal__label", "modal__label_price");
-  priceLabel.htmlFor = "price";
+  priceLabel.htmlFor = "edit-price";
   const priceText = document.createElement("span");
   priceText.classList.add("modal__text");
   priceText.textContent = "Цена";
@@ -180,7 +184,7 @@ export const openEditModal = async ({
   priceInput.classList.add("modal__input");
   priceInput.type = "number";
   priceInput.name = "price";
-  priceInput.id = "price";
+  priceInput.id = "edit-price";
   priceInput.value = price;
 
   priceLabel.append(priceText, priceInput);
@@ -240,9 +244,9 @@ export const openEditModal = async ({
 
   const modalPic = async () => {
     try {
-      const response = await fetch(`${GOODS_URL}${id}`);
+      const response = await fetch(goodsItemUrl(id));
       if (!response.ok) {
-        throw new Error("Image not found");
+        throw new Error("Не удалось загрузить данные товара");
       }
 
       const data = await response.json();
@@ -260,8 +264,10 @@ export const openEditModal = async ({
     }
   };
 
+  // Модальное окно редактирования создаётся заново при каждом открытии,
+  // поэтому при закрытии убираем его из DOM (иначе копятся скрытые копии).
   const closeModal = () => {
-    modalContainer.classList.remove("active");
+    modalContainer.remove();
   };
 
   modalform.addEventListener("submit", async (event) => {
@@ -319,7 +325,7 @@ export const openEditModal = async ({
 
 export const saveChanges = async (id, updatedData) => {
   try {
-    const response = await fetch(`${GOODS_URL}${id}`, {
+    const response = await fetch(goodsItemUrl(id), {
       method: "PATCH",
       headers: {
         "Content-Type": "application/json",

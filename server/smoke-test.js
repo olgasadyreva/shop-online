@@ -95,8 +95,10 @@ function check(name, ok, detail) {
   check("Фронт: GET /image/ — 200", r.status === 200, `status=${r.status}, content-type=${r.headers["content-type"]}`);
 
   // 10. Пагинация — фронт делает dataUrl.searchParams.set("page", page - 1)
+  const totalAll = (await request("GET", "/api/goods")).body.totalCount;
   r = await request("GET", "/api/goods?page=2");
-  check("Пагинация: page=2 — 5 товаров", r.body.goods.length === 5 && r.body.page === 2, `goods=${r.body.goods.length}`);
+  const expectedPage2 = Math.max(0, totalAll - 10);
+  check("Пагинация: page=2 — остаток товаров", r.body.goods.length === expectedPage2 && r.body.page === 2, `goods=${r.body.goods.length}, expected=${expectedPage2}`);
 
   // 11. Поиск по кириллице — фронт делает searchInput.value
   r = await request("GET", "/api/goods?search=" + encodeURIComponent("Смартфон"));
@@ -163,6 +165,75 @@ function check(name, ok, detail) {
   // 23. PATCH с пустым телом — 200 (ничего не менять)
   r = await request("PATCH", "/api/goods/2074454224", {});
   check("PATCH пустое тело — 200", r.status === 200, `status=${r.status}`);
+
+  // ---- Регрессии: изображения и валидация ----
+
+  // 24. Некорректный page не должен превращаться в NaN и ронять запрос
+  r = await request("GET", "/api/goods?page=abc");
+  check("page=abc — 200 и page=1", r.status === 200 && r.body.page === 1, `status=${r.status}, page=${r.body.page}`);
+
+  // 25. Нечисловой id — 404, а не 500
+  r = await request("GET", "/api/goods/abc");
+  check("GET /api/goods/abc — 404", r.status === 404, `status=${r.status}`);
+  r = await request("DELETE", "/api/goods/abc");
+  check("DELETE /api/goods/abc — 404", r.status === 404, `status=${r.status}`);
+  r = await request("PATCH", "/api/goods/abc", { price: 1 });
+  check("PATCH /api/goods/abc — 404", r.status === 404, `status=${r.status}`);
+
+  // 26. Изображение с неподдерживаемым типом не должно создавать товар-сироту
+  const beforeBad = (await request("GET", "/api/goods")).body.totalCount;
+  r = await request("POST", "/api/goods", {
+    title: "bad-image-mime", price: 1, category: "Игрушки",
+    image: "data:application/octet-stream;base64,AA==",
+  });
+  const afterBad = (await request("GET", "/api/goods")).body.totalCount;
+  check("POST image с неверным mime — 400", r.status === 400, `status=${r.status}`);
+  check("POST image с неверным mime не создаёт товар", beforeBad === afterBad, `before=${beforeBad}, after=${afterBad}`);
+
+  // 27. Полный цикл работы с изображением: загрузка → раздача → изменение → удаление
+  const png1x1 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+  const jpeg1x1 = "/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q==";
+
+  r = await request("POST", "/api/goods", {
+    title: "image-upload-test", price: 10, category: "Игрушки",
+    image: "data:image/png;base64," + png1x1,
+  });
+  check("POST с изображением — 201", r.status === 201, `status=${r.status}`);
+  const imageId = r.body?.id;
+  const imagePath = r.body?.image;
+  check("POST с изображением возвращает image/<id>.png", imagePath === `image/${imageId}.png`, `image=${imagePath}`);
+
+  r = await request("GET", "/" + imagePath);
+  check("GET /image/<id>.png — 200", r.status === 200, `status=${r.status}, ct=${r.headers["content-type"]}`);
+
+  // 28. Файл удалён с диска (например, после перезапуска Render) — отдаём из БД
+  const { existsSync, unlinkSync } = await import("node:fs");
+  const { resolve } = await import("node:path");
+  const imgDir = process.env.IMAGE_DIR || resolve(process.cwd(), "image");
+  const fileOnDisk = resolve(imgDir, `${imageId}.png`);
+  if (existsSync(fileOnDisk)) {
+    try {
+      unlinkSync(fileOnDisk);
+      r = await request("GET", "/" + imagePath);
+      check(
+        "Изображение без файла на диске отдаётся из БД — 200 image/png",
+        r.status === 200 && r.headers["content-type"] === "image/png",
+        `status=${r.status}, ct=${r.headers["content-type"]}`,
+      );
+    } catch (e) {
+      console.log(`SKIP | файл изображения недоступен для удаления: ${e.message}`);
+    }
+  }
+
+  r = await request("PATCH", `/api/goods/${imageId}`, {
+    image: "data:image/jpeg;base64," + jpeg1x1,
+  });
+  check("PATCH с изображением — 200 и путь .jpg", r.status === 200 && /\.jpg$/.test(r.body?.image || ""), `status=${r.status}, image=${r.body?.image}`);
+
+  r = await request("DELETE", `/api/goods/${imageId}`);
+  check("DELETE товара с изображением — 204", r.status === 204, `status=${r.status}`);
+  r = await request("GET", `/api/goods/${imageId}`);
+  check("GET удалённого товара — 404", r.status === 404, `status=${r.status}`);
 
   // Итог
   const failed = results.filter((x) => !x.ok);

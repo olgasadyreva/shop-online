@@ -1,4 +1,4 @@
-import create, { API_URL, GOODS_URL, imageUrl, appData } from "./const.js";
+import create, { API_URL, goodsItemUrl, imageUrl, appData } from "./const.js";
 const { btn, table, modal, form, price, count, discont, formelems, checkbox } =
   create;
 import { closeModal, openModal } from "./modal.js";
@@ -73,17 +73,22 @@ const openConfirmationModal = async (id, target) => {
   confirmButton.textContent = "Удалить";
   confirmButton.addEventListener("click", async () => {
     try {
-      const response = await fetch(`${GOODS_URL}${id}`, {
+      const response = await fetch(goodsItemUrl(id), {
         method: "DELETE",
       });
 
-      if (!response.ok && response.status !== 404) {
-        throw new Error(`Ошибка удаления: ${response.status}`);
+      if (!response.ok) {
+        throw new Error(
+          response.status === 404
+            ? "Товар уже удалён"
+            : `Не удалось удалить товар (код ${response.status})`,
+        );
       }
 
-      renderGoods(`${appData.lastUrl}`);
+      await renderGoods(`${appData.lastUrl}`);
     } catch (error) {
       console.error("Failed to delete the product:", error);
+      window.alert(error.message);
     }
 
     modal.remove();
@@ -126,12 +131,22 @@ export const openWindow = () => {
       const id = row.dataset.id;
 
       try {
-        const response = await fetch(`${GOODS_URL}${id}`);
+        const response = await fetch(goodsItemUrl(id));
         if (!response.ok) {
-          throw new Error("Image not found");
+          throw new Error(
+            response.status === 404
+              ? "Товар не найден"
+              : "Не удалось загрузить данные товара",
+          );
         }
 
         const data = await response.json();
+
+        if (!data.image) {
+          window.alert("У этого товара нет изображения");
+          return;
+        }
+
         const pictureUrl = imageUrl(data.image);
 
         const w = screen.width / 2 - 400;

@@ -2,6 +2,7 @@ import { readFileSync, existsSync, mkdirSync, readdirSync, copyFileSync } from "
 import { resolve, join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { connect } from "./pool.js";
+import { imageDir } from "../config.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -24,8 +25,8 @@ function findFile(name, dirs) {
 const GOODS_JSON = findFile("db_goods.json", [SERVER_ROOT, REPO_ROOT]);
 const CATEGORY_JSON = findFile("db_category.json", [SERVER_ROOT, REPO_ROOT]);
 
-// Изображения: рабочий каталог server/image и исходный src/image (если доступен)
-const IMG_DIR = resolve(__dirname, "../../image");
+// Изображения: рабочий каталог (по умолчанию server/image) и исходный src/image (если доступен)
+const IMG_DIR = imageDir;
 const SRC_IMAGE_DIR = join(REPO_ROOT, "src", "image");
 
 // DDL-схемы
@@ -50,6 +51,14 @@ CREATE TABLE IF NOT EXISTS goods (
 
 CREATE INDEX IF NOT EXISTS idx_goods_category ON goods(category);
 CREATE INDEX IF NOT EXISTS idx_goods_discount ON goods(discount) WHERE discount > 0;
+
+-- Резервная копия загруженных изображений: на Render диск контейнера
+-- эфемерный, поэтому файл в ./image может исчезнуть после перезапуска.
+CREATE TABLE IF NOT EXISTS goods_images (
+  goods_id BIGINT PRIMARY KEY REFERENCES goods(id) ON DELETE CASCADE,
+  mime     TEXT NOT NULL,
+  data     TEXT NOT NULL
+);
 `;
 
 /**

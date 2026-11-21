@@ -5,6 +5,13 @@ export const CATEGORY_URL = `${API_URL}/api/categories`;
 export const TOTAL_PRICE_URL = `${API_URL}/api/total`;
 
 /**
+ * URL конкретного товара: /api/goods/<id>.
+ * Слэш обязателен — без него получается /api/goods12345 и сервер отвечает 404.
+ */
+export const goodsItemUrl = (id) =>
+  `${GOODS_URL}/${encodeURIComponent(id)}`;
+
+/**
  * Собирает абсолютный URL изображения.
  * В БД хранится относительный путь вида "image/123.jpg",
  * поэтому его нужно дополнить адресом бэкенда.

@@ -35,3 +35,9 @@ export const databaseUrl =
   "postgres://postgres:postgres@localhost:5432/shop_online";
 export const limit = parseInt(process.env.LIMIT || "10", 10);
 export const maxBodySize = parseInt(process.env.MAX_BODY_SIZE || "2097152", 10);
+
+// Каталог для изображений товаров. По умолчанию — ./image рядом с server/,
+// но на хостинге с постоянным диском путь можно переопределить.
+export const imageDir = process.env.IMAGE_DIR
+  ? resolve(process.env.IMAGE_DIR)
+  : resolve(__dirname, "../image");
