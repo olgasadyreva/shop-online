@@ -1,19 +1,29 @@
 import { CATEGORY_URL } from "./const";
 
+/**
+ * Загружает категории и обновляет подсказки (datalist) у полей ввода.
+ * Вызывается в том числе при каждом открытии окна редактирования,
+ * поэтому старые списки удаляются, чтобы не копились дубликаты.
+ */
 export const fetchCategories = async () => {
-  const categoriesResponse = await fetch(CATEGORY_URL, {
-    method: "GET",
-  });
+  try {
+    const categoriesResponse = await fetch(CATEGORY_URL, {
+      method: "GET",
+    });
 
-  if (categoriesResponse.ok) {
+    if (!categoriesResponse.ok) return;
+
     const categories = await categoriesResponse.json();
 
-    const categoryInput = document.getElementById("categoryId");
-    const categoryInput2 = document.getElementById("category");
+    document
+      .querySelectorAll("#category-list-id, #category-list")
+      .forEach((list) => list.remove());
 
-    if (categoryInput) {
+    const fillDatalist = (input, datalistId) => {
+      if (!input) return;
+
       const datalist = document.createElement("datalist");
-      datalist.id = "category-list-id";
+      datalist.id = datalistId;
 
       categories.forEach((category) => {
         const option = document.createElement("option");
@@ -21,22 +31,13 @@ export const fetchCategories = async () => {
         datalist.append(option);
       });
 
-      categoryInput.setAttribute("list", "category-list-id");
+      input.setAttribute("list", datalistId);
       document.body.append(datalist);
-    }
+    };
 
-    if (categoryInput2) {
-      const datalist2 = document.createElement("datalist");
-      datalist2.id = "category-list";
-
-      categories.forEach((category) => {
-        const option = document.createElement("option");
-        option.value = category;
-        datalist2.append(option);
-      });
-
-      categoryInput2.setAttribute("list", "category-list");
-      document.body.append(datalist2);
-    }
+    fillDatalist(document.getElementById("categoryId"), "category-list-id");
+    fillDatalist(document.getElementById("category"), "category-list");
+  } catch (error) {
+    console.error("Не удалось загрузить категории:", error);
   }
 };

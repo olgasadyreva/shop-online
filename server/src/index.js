@@ -248,6 +248,11 @@ function validateGoodsBody(body, isPatch) {
     if (body.price === undefined || body.price === null) {
       errors.push("price обязателен");
     }
+  } else if (body.title !== undefined && body.title !== null) {
+    // При частичном обновлении пустое название тоже недопустимо.
+    if (typeof body.title !== "string" || body.title.trim().length === 0) {
+      errors.push("title должно быть непустой строкой");
+    }
   }
 
   if (body.price !== undefined && body.price !== null) {

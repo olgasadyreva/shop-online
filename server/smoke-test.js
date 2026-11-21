@@ -166,6 +166,10 @@ function check(name, ok, detail) {
   r = await request("PATCH", "/api/goods/2074454224", {});
   check("PATCH пустое тело — 200", r.status === 200, `status=${r.status}`);
 
+  // 23.1. PATCH с пустым названием — 400 (нельзя сохранить товар без названия)
+  r = await request("PATCH", "/api/goods/2074454224", { title: "   " });
+  check("PATCH пустой title — 400", r.status === 400, `status=${r.status}, error=${r.body.error}`);
+
   // ---- Регрессии: изображения и валидация ----
 
   // 24. Некорректный page не должен превращаться в NaN и ронять запрос

@@ -160,34 +160,38 @@ const createRow = ({
 };
 
 const displayErrorMessageModal = (message) => {
-  const errorModal = document.createElement("div");
-  errorModal.classList.add("modal");
-  errorModal.id = "errorModal";
+  // Оформляем как остальные модальные окна: раньше сообщение добавлялось
+  // в конец страницы без затемнения и оставалось незаметным.
+  const overlay = document.createElement("div");
+  overlay.classList.add("overlay", "active");
 
   const modalContent = document.createElement("div");
-  modalContent.classList.add("modal-content");
-
-  const closeBtn = document.createElement("span");
-  closeBtn.classList.add("close");
-  closeBtn.textContent = "×";
+  modalContent.classList.add("overlay__modal", "modal", "confirm-modal");
 
   const errorTitle = document.createElement("h2");
-  errorTitle.textContent = "Error";
+  errorTitle.classList.add("modal__title", "confirm-modal__title");
+  errorTitle.textContent = "Ошибка";
 
   const errorMessage = document.createElement("p");
+  errorMessage.classList.add("confirm-modal__message");
   errorMessage.textContent = message;
 
-  modalContent.append(closeBtn, errorTitle, errorMessage);
+  const actions = document.createElement("div");
+  actions.classList.add("confirm-modal__actions");
 
-  errorModal.append(modalContent);
+  const okButton = document.createElement("button");
+  okButton.classList.add("modal__submit", "confirm-modal__btn");
+  okButton.textContent = "ОК";
+  okButton.addEventListener("click", () => overlay.remove());
 
-  document.body.append(errorModal);
-
-  errorModal.style.display = "block";
-
-  closeBtn.addEventListener("click", () => {
-    errorModal.style.display = "none";
+  actions.append(okButton);
+  modalContent.append(errorTitle, errorMessage, actions);
+  overlay.append(modalContent);
+  overlay.addEventListener("click", (event) => {
+    if (event.target === overlay) overlay.remove();
   });
+
+  document.body.append(overlay);
 };
 
 export { addProductData, numbers, createRow, addProductPage };

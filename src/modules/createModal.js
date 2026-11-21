@@ -228,10 +228,27 @@ export const openEditModal = async ({
   const totalPriceOutput = document.createElement("output");
   totalPriceOutput.classList.add("modal__total-price");
   totalPriceOutput.name = "total";
-  totalPriceOutput.textContent = `$${getTotal(price, count, discount).toFixed(
-    2,
-  )}`;
   totalPriceLabel.append(totalPriceOutput);
+
+  // Итог в окне редактирования пересчитывается при изменении полей.
+  const updateModalTotal = () => {
+    const currentPrice = Number(priceInput.value) || 0;
+    const currentCount = Number(countInput.value) || 0;
+    const currentDiscount = discountCheckbox.checked
+      ? Number(discountInput.value) || 0
+      : 0;
+    totalPriceOutput.textContent = `$${getTotal(
+      currentPrice,
+      currentCount,
+      currentDiscount,
+    ).toFixed(2)}`;
+  };
+
+  [priceInput, countInput, discountInput].forEach((input) =>
+    input.addEventListener("input", updateModalTotal),
+  );
+  discountCheckbox.addEventListener("change", updateModalTotal);
+  updateModalTotal();
 
   const submitButton = document.createElement("button");
   submitButton.classList.add("modal__submit");

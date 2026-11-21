@@ -22,10 +22,13 @@ export const renderPagination = ({ page, totalCount, dataUrl }) => {
 
   const pagesElem = document.createElement("p");
   pagesElem.classList.add("sub-panel__pages");
-  pagesElem.textContent = `
-    ${(page - 1) * counter + 1} - 
-    ${page * counter < totalCount ? page * counter : totalCount} из 
-    ${totalCount}`;
+  if (totalCount === 0) {
+    pagesElem.textContent = "0 из 0";
+  } else {
+    const firstOnPage = (page - 1) * counter + 1;
+    const lastOnPage = page * counter < totalCount ? page * counter : totalCount;
+    pagesElem.textContent = `${firstOnPage} - ${lastOnPage} из ${totalCount}`;
+  }
 
   const arrowsElem = document.createElement("div");
   arrowsElem.classList.add("sub-panel__arrows");
