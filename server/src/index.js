@@ -43,7 +43,8 @@ const MIME_TO_EXT = {
   "image/webp": "webp",
 };
 const MAX_IMAGE_BYTES = 1048576;
-const IMAGE_NAME_RE = /^[a-zA-Z0-9_.-]+\.(jpg|jpeg|png|gif|webp)$/i;
+// Имя файла: <id>.<ext> (старые записи) или <id>-<версия>.<ext> (новые).
+const IMAGE_NAME_RE = /^\d+(?:-\d+)?\.(jpg|jpeg|png|gif|webp)$/i;
 
 /**
  * Проверяет и декодирует data URI изображения.
@@ -89,11 +90,11 @@ function isFile(filePath) {
 /**
  * Достаёт изображение из БД, если файла нет на диске
  * (на Render диск контейнера эфемерный и очищается при перезапуске).
- * @param {string} filename — имя вида <id>.<ext>
+ * @param {string} filename — имя вида <id>.<ext> или <id>-<версия>.<ext>
  * @returns {Promise<{buffer: Buffer, mime: string} | null>}
  */
 async function loadImageFromDB(filename) {
-  const match = filename.match(/^(\d+)\.(jpg|jpeg|png|gif|webp)$/i);
+  const match = filename.match(/^(\d+)(?:-\d+)?\.(jpg|jpeg|png|gif|webp)$/i);
   if (!match) return null;
 
   const { rows } = await query(
@@ -177,14 +178,19 @@ function sendImageBuffer(res, buffer, mime) {
 }
 
 /**
- * Сохранение изображения в ./image/<id>.<ext> и в БД (goods_images).
+ * Сохранение изображения в ./image/<id>-<версия>.<ext> и в БД (goods_images).
  * Копия в БД нужна, чтобы картинка пережила перезапуск контейнера на Render.
+ *
+ * Имя файла содержит версию (<id>-<время>.<ext>), потому что браузер кеширует
+ * изображения по URL. С прежним именем <id>.<ext> новая картинка не
+ * отображалась: браузер отдавал старую копию из кеша.
+ *
  * @param {number|string} id — идентификатор товара
  * @param {{buffer: Buffer, base64: string, mime: string, ext: string}} decoded
  * @returns {Promise<string>} относительный путь к файлу
  */
 async function saveImage(id, decoded) {
-  const filename = `${id}.${decoded.ext}`;
+  const filename = `${id}-${Date.now()}.${decoded.ext}`;
   const filePath = resolve(IMG_DIR, filename);
 
   try {
@@ -196,6 +202,8 @@ async function saveImage(id, decoded) {
     console.error(`Не удалось записать изображение на диск (${filePath}):`, err.message);
   }
 
+  // В таблице goods_images одна запись на товар: при замене картинки
+  // строка перезаписывается, поэтому сервер всегда отдаёт актуальную копию.
   await query(
     `INSERT INTO goods_images (goods_id, mime, data) VALUES ($1, $2, $3)
      ON CONFLICT (goods_id) DO UPDATE SET mime = EXCLUDED.mime, data = EXCLUDED.data`,
@@ -222,17 +230,20 @@ function parseId(raw) {
 }
 
 /**
- * Валидация категории: существует ли она в БД.
+ * Проверяет категорию и создаёт её, если такой ещё нет.
+ * @param {unknown} category
+ * @returns {Promise<{name: string} | {error: string}>}
  */
-async function validateCategory(category) {
+async function ensureCategory(category) {
   if (!category || typeof category !== "string" || category.trim().length === 0) {
-    return "Поле category обязательно и должно быть непустой строкой";
+    return { error: "Поле category обязательно и должно быть непустой строкой" };
   }
-  const { rows } = await query("SELECT 1 FROM categories WHERE name = $1", [category]);
-  if (rows.length === 0) {
-    return `Категория не найдена: ${category}`;
-  }
-  return null;
+  const name = category.trim();
+  await query(
+    "INSERT INTO categories (name) VALUES ($1) ON CONFLICT (name) DO NOTHING",
+    [name],
+  );
+  return { name };
 }
 
 /**
@@ -338,8 +349,12 @@ async function start() {
       let params = [];
 
       if (search.trim()) {
+        // Ищем только по наименованию и категории (как обещает placeholder в UI).
+        // Поиск по описанию давал ложные совпадения: например, «ед» находил
+        // «средство», «предусматривает» и т.п., из-за чего товары нужной
+        // категории терялись среди посторонних.
         const escaped = search.trim().replace(/[%_\\]/g, (c) => `\\${c}`);
-        where.push(`(title ILIKE $1 OR description ILIKE $1 OR category ILIKE $1)`);
+        where.push(`(title ILIKE $1 OR category ILIKE $1)`);
         params.push(`%${escaped}%`);
       }
 
@@ -374,11 +389,12 @@ async function start() {
         return;
       }
 
-      const catErr = await validateCategory(body.category);
-      if (catErr) {
-        sendError(res, 400, catErr);
+      const category = await ensureCategory(body.category);
+      if (category.error) {
+        sendError(res, 400, category.error);
         return;
       }
+      body.category = category.name;
 
       const values = [
         body.title,
@@ -508,11 +524,12 @@ async function start() {
       const item = existing[0];
 
       if (body.category !== undefined && body.category !== null && body.category !== false) {
-        const catErr = await validateCategory(body.category);
-        if (catErr) {
-          sendError(res, 400, catErr);
+        const category = await ensureCategory(body.category);
+        if (category.error) {
+          sendError(res, 400, category.error);
           return;
         }
+        body.category = category.name;
       }
 
       const updates = [];
